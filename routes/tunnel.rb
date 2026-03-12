@@ -25,11 +25,14 @@ module Routes
         ws = Faye::WebSocket.new(request.env)
 
         ws.on :open do |_|
-          LOCK.synchronize { CONNECTIONS[key] = ws }
-          # Registry is in the store (swappable to Redis for multi-machine).
-          # Value could be machine_id for routing; for single machine, true suffices.
-          Relay::REGISTRY.set(key, true)
-          puts "[tunnel] Appliance connected (#{key[0..7]}...)"
+          begin
+            LOCK.synchronize { CONNECTIONS[key] = ws }
+            Relay::REGISTRY.set(key, true)
+            puts "[tunnel] Appliance connected (#{key[0..7]}...)"
+          rescue => e
+            puts "[tunnel] ERROR on open: #{e.class}: #{e.message}"
+            puts e.backtrace.first(5).join("\n")
+          end
         end
 
         ws.on :message do |event|
@@ -42,11 +45,11 @@ module Routes
           end
         end
 
-        ws.on :close do |_|
+        ws.on :close do |event|
           LOCK.synchronize { CONNECTIONS.delete(key) }
           Relay::REGISTRY.delete(key)
           PENDING.each_value { |q| q.push(nil) }
-          puts "[tunnel] Appliance disconnected (#{key[0..7]}...)"
+          puts "[tunnel] Appliance disconnected (#{key[0..7]}..., code: #{event.code}, reason: #{event.reason})"
         end
 
         ws.rack_response
@@ -58,7 +61,7 @@ module Routes
         halt 401, json(error: "unauthorized") unless key&.length&.positive?
 
         # Check registry first (works with Redis for multi-machine lookup).
-        unless REGISTRY.get(key)
+        unless Relay::REGISTRY.get(key)
           halt 502, json(error: "Appliance not connected")
         end
 
