@@ -28,7 +28,7 @@ module Routes
           LOCK.synchronize { CONNECTIONS[key] = ws }
           # Registry is in the store (swappable to Redis for multi-machine).
           # Value could be machine_id for routing; for single machine, true suffices.
-          REGISTRY.set(key, true)
+          Relay::REGISTRY.set(key, true)
           puts "[tunnel] Appliance connected (#{key[0..7]}...)"
         end
 
@@ -44,7 +44,7 @@ module Routes
 
         ws.on :close do |_|
           LOCK.synchronize { CONNECTIONS.delete(key) }
-          REGISTRY.delete(key)
+          Relay::REGISTRY.delete(key)
           PENDING.each_value { |q| q.push(nil) }
           puts "[tunnel] Appliance disconnected (#{key[0..7]}...)"
         end
