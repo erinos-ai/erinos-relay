@@ -1,0 +1,34 @@
+spotify:
+  auth_url: https://accounts.spotify.com/authorize
+  token_url: https://accounts.spotify.com/api/token
+  scopes:
+    - user-read-playback-state
+    - user-modify-playback-state
+    - user-read-currently-playing
+    - user-read-recently-played
+  extra_params:
+    access_type: offline
+    prompt: consent
+
+sonos:
+  auth_url: https://api.sonos.com/login/v3/oauth
+  token_url: https://api.sonos.com/login/v3/oauth/access
+  token_auth: basic
+  scopes:
+    - playback-control-all
+
+google:
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth
+  token_url: https://oauth2.googleapis.com/token
+  extra_params:
+    access_type: offline
+    prompt: consent
+  scopes:
+    - https://www.googleapis.com/auth/gmail.modify
+    - https://www.googleapis.com/auth/calendar
+    - https://www.googleapis.com/auth/drive
+    - https://www.googleapis.com/auth/documents
+    - https://www.googleapis.com/auth/spreadsheets
+    - https://www.googleapis.com/auth/presentations
+    - https://www.googleapis.com/auth/tasks
+    - https://www.googleapis.com/auth/contacts
