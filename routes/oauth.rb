@@ -2,6 +2,8 @@
 
 module Routes
   module OAuth
+    TTL = 300 # seconds
+
     def self.registered(app)
       # Called by Erin to start an OAuth flow.
       app.post "/oauth/start" do
@@ -23,14 +25,13 @@ module Routes
           return json(error: "No credentials configured for provider: #{provider}")
         end
 
-        SESSIONS[state] = {
+        SESSIONS.set(state, {
           provider: provider,
           client_id: client_id,
           client_secret: client_secret,
           token_url: config["token_url"],
-          token_auth: config["token_auth"],
-          created_at: Time.now
-        }
+          token_auth: config["token_auth"]
+        }, ttl: TTL)
 
         auth_params = {
           client_id: client_id,
@@ -41,7 +42,7 @@ module Routes
         }
         auth_params.merge!(config["extra_params"]) if config["extra_params"]
 
-        cleanup_expired
+        SESSIONS.cleanup
         json(url: "#{config['auth_url']}?#{URI.encode_www_form(auth_params)}")
       end
 
@@ -61,7 +62,7 @@ module Routes
           return "Missing state or code parameter."
         end
 
-        session = SESSIONS[state]
+        session = SESSIONS.get(state)
         unless session
           status 400
           return "Unknown or expired session."
@@ -75,13 +76,13 @@ module Routes
           return "Token exchange failed: #{tokens['error_description'] || tokens['error']}"
         end
 
-        SESSIONS[state] = session.merge(
+        SESSIONS.set(state, session.merge(
           tokens: {
             access_token: tokens["access_token"],
             refresh_token: tokens["refresh_token"],
             expires_in: tokens["expires_in"]
           }
-        )
+        ), ttl: TTL)
 
         content_type :html
         <<~HTML
@@ -104,7 +105,7 @@ module Routes
           return json(error: "Missing state parameter.")
         end
 
-        session = SESSIONS[state]
+        session = SESSIONS.get(state)
 
         unless session&.dig(:tokens)
           status 404

@@ -8,6 +8,7 @@ require "net/http"
 require "base64"
 require "timeout"
 
+require_relative "store/memory"
 require_relative "routes/oauth"
 require_relative "routes/tunnel"
 
@@ -15,8 +16,12 @@ class Relay < Sinatra::Base
   set :host_authorization, permitted: :all
 
   PROVIDERS = YAML.load_file(File.expand_path("providers.yml", __dir__))
-  SESSIONS = {}
-  TTL = 300 # seconds
+
+  # Swappable stores — replace with Store::Redis.new(url) to scale horizontally.
+  # Sessions: OAuth flow state (TTL-based).
+  # Registry: which tunnel key is connected (and on which machine, for multi-machine).
+  SESSIONS = Store::Memory.new
+  REGISTRY = Store::Memory.new
 
   helpers do
     def json(data)
@@ -46,18 +51,12 @@ class Relay < Sinatra::Base
 
       JSON.parse(response.body)
     end
-
-    def cleanup_expired
-      cutoff = Time.now - TTL
-      SESSIONS.delete_if { |_, v| v[:created_at] < cutoff }
-    end
   end
 
   register Routes::OAuth
   register Routes::Tunnel
 
   get "/health" do
-    count = Routes::Tunnel::LOCK.synchronize { Routes::Tunnel::APPLIANCES.size }
-    json(status: "ok", appliances: count)
+    json(status: "ok", appliances: REGISTRY.size)
   end
 end

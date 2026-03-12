@@ -7,13 +7,13 @@ require "thread"
 
 module Routes
   module Tunnel
+    # Local to this process — WebSocket connections can't be shared across machines.
+    CONNECTIONS = {} # tunnel_key => WebSocket
+    PENDING = {}     # request_id => Queue
     LOCK = Mutex.new
-    APPLIANCES = {} # tunnel_key => WebSocket
-    PENDING = {}    # request_id => Queue
 
     def self.registered(app)
       # WebSocket endpoint — appliances connect here on boot.
-      # Authenticated and routed by TUNNEL_KEY.
       app.get "/tunnel" do
         unless Faye::WebSocket.websocket?(request.env)
           halt 400, json(error: "WebSocket required")
@@ -25,7 +25,10 @@ module Routes
         ws = Faye::WebSocket.new(request.env)
 
         ws.on :open do |_|
-          LOCK.synchronize { APPLIANCES[key] = ws }
+          LOCK.synchronize { CONNECTIONS[key] = ws }
+          # Registry is in the store (swappable to Redis for multi-machine).
+          # Value could be machine_id for routing; for single machine, true suffices.
+          REGISTRY.set(key, true)
           puts "[tunnel] Appliance connected (#{key[0..7]}...)"
         end
 
@@ -40,8 +43,8 @@ module Routes
         end
 
         ws.on :close do |_|
-          LOCK.synchronize { APPLIANCES.delete(key) }
-          # Unblock any pending requests for this appliance
+          LOCK.synchronize { CONNECTIONS.delete(key) }
+          REGISTRY.delete(key)
           PENDING.each_value { |q| q.push(nil) }
           puts "[tunnel] Appliance disconnected (#{key[0..7]}...)"
         end
@@ -50,12 +53,19 @@ module Routes
       end
 
       # Proxy endpoint — clients (iPhone, Watch, etc.) call this.
-      # Routed to the correct appliance by the same TUNNEL_KEY.
       app.post "/api/chat" do
         key = request.env["HTTP_AUTHORIZATION"]&.sub(/^Bearer\s+/, "")
         halt 401, json(error: "unauthorized") unless key&.length&.positive?
 
-        ws = LOCK.synchronize { APPLIANCES[key] }
+        # Check registry first (works with Redis for multi-machine lookup).
+        unless REGISTRY.get(key)
+          halt 502, json(error: "Appliance not connected")
+        end
+
+        # Get local WebSocket connection.
+        # TODO: For multi-machine, if CONNECTIONS[key] is nil but REGISTRY has it,
+        # the appliance is on another machine. Use fly-replay or Redis pub/sub to route.
+        ws = LOCK.synchronize { CONNECTIONS[key] }
         halt 502, json(error: "Appliance not connected") unless ws
 
         request_id = SecureRandom.uuid

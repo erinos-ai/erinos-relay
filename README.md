@@ -36,6 +36,22 @@ Multiple appliances can connect simultaneously — each with its own key. No por
 | POST | `/api/chat` | Proxied to appliance via tunnel (Bearer auth) |
 | GET | `/health` | Health check (shows connected appliance count) |
 
+## Architecture
+
+Storage is behind a `Store` interface (`store/memory.rb`) that can be swapped to Redis for horizontal scaling:
+
+| Component | Store | Swappable? |
+|-----------|-------|------------|
+| `SESSIONS` | OAuth flow state (TTL-based) | Yes — `Store::Redis.new` |
+| `REGISTRY` | Which keys are connected (and on which machine) | Yes — `Store::Redis.new`, store machine_id as value |
+| `CONNECTIONS` | Live WebSocket objects | No — always local per-machine |
+| `PENDING` | Request/response queues | No — local to HTTP request lifecycle |
+
+To scale horizontally with Redis:
+1. Replace `Store::Memory.new` with `Store::Redis.new(url)` in `app.rb`
+2. Store machine_id in REGISTRY instead of `true`
+3. When a request hits a machine that doesn't hold the WebSocket, use Fly.io's `fly-replay: instance=<machine_id>` to reroute (marked with TODO in `routes/tunnel.rb`)
+
 ## Adding a provider
 
 1. Add the provider's OAuth config to `providers.yml`
