@@ -11,7 +11,7 @@ module Routes
         provider = body["provider"]
         state = body["state"]
 
-        config = PROVIDERS[provider]
+        config = Relay::PROVIDERS[provider]
         unless config
           status 400
           return json(error: "Unknown provider: #{provider}")
@@ -25,7 +25,7 @@ module Routes
           return json(error: "No credentials configured for provider: #{provider}")
         end
 
-        SESSIONS.set(state, {
+        Relay::SESSIONS.set(state, {
           provider: provider,
           client_id: client_id,
           client_secret: client_secret,
@@ -42,7 +42,7 @@ module Routes
         }
         auth_params.merge!(config["extra_params"]) if config["extra_params"]
 
-        SESSIONS.cleanup
+        Relay::SESSIONS.cleanup
         json(url: "#{config['auth_url']}?#{URI.encode_www_form(auth_params)}")
       end
 
@@ -62,7 +62,7 @@ module Routes
           return "Missing state or code parameter."
         end
 
-        session = SESSIONS.get(state)
+        session = Relay::SESSIONS.get(state)
         unless session
           status 400
           return "Unknown or expired session."
@@ -71,12 +71,12 @@ module Routes
         tokens = exchange_code(session, code, "#{request.base_url}/oauth/callback")
 
         if tokens["error"]
-          SESSIONS.delete(state)
+          Relay::SESSIONS.delete(state)
           status 400
           return "Token exchange failed: #{tokens['error_description'] || tokens['error']}"
         end
 
-        SESSIONS.set(state, session.merge(
+        Relay::SESSIONS.set(state, session.merge(
           tokens: {
             access_token: tokens["access_token"],
             refresh_token: tokens["refresh_token"],
@@ -105,7 +105,7 @@ module Routes
           return json(error: "Missing state parameter.")
         end
 
-        session = SESSIONS.get(state)
+        session = Relay::SESSIONS.get(state)
 
         unless session&.dig(:tokens)
           status 404
@@ -113,7 +113,7 @@ module Routes
         end
 
         tokens = session[:tokens]
-        SESSIONS.delete(state)
+        Relay::SESSIONS.delete(state)
         json(status: "ok", **tokens)
       end
 
@@ -122,7 +122,7 @@ module Routes
         body = JSON.parse(request.body.read)
         provider = body["provider"]
 
-        config = PROVIDERS[provider]
+        config = Relay::PROVIDERS[provider]
         unless config
           status 400
           return json(error: "Unknown provider: #{provider}")
